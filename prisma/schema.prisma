@@ -1,0 +1,421 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum OrderStatus {
+  draft
+  pending_payment
+  paid
+  caller_assigned
+  brief_reviewed
+  in_window
+  dialing
+  connected
+  delivered
+  failed
+  refunded
+  cancelled
+}
+
+enum CallOutcome {
+  answered
+  no_answer
+  busy
+  invalid
+  blocked
+}
+
+enum KeepsakeVisibility {
+  private
+  link
+  public
+}
+
+enum ToneLevel {
+  tender
+  warm
+  playful
+  bold
+  unhinged
+}
+
+enum UserRole {
+  admin
+  ops
+}
+
+enum DncSource {
+  recipient_request
+  abuse
+  legal
+}
+
+enum AbuseStatus {
+  open
+  investigating
+  resolved
+  dismissed
+}
+
+// ============================================================
+// Auth.js required models. Field names and relations are exact.
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(admin)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  accounts         Account[]
+  sessions         Session[]
+  reviewedBriefs   CallBrief[]    @relation("BriefReviewer")
+  assignedTalents  VoiceTalent[]
+  abuseAssignments AbuseReport[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// Catalog
+// ============================================================
+
+model Occasion {
+  id             String   @id @default(uuid())
+  slug           String   @unique
+  name           String
+  kicker         String?
+  description    String?
+  heroImageUrl   String?  @map("hero_image_url")
+  sortOrder      Int      @default(0) @map("sort_order")
+  isActive       Boolean  @default(true) @map("is_active")
+  requiresReveal Boolean  @default(false) @map("requires_reveal")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  orders   Order[]
+  samples  VoiceSample[]
+  packages PackageOccasion[]
+
+  @@map("occasions")
+}
+
+model Package {
+  id               String   @id @default(uuid())
+  slug             String   @unique
+  name             String
+  tagline          String?
+  maxDurationSec   Int      @map("max_duration_sec")
+  includes         Json     @default("[]")
+  includesKeepsake Boolean  @default(false) @map("includes_keepsake")
+  sortOrder        Int      @default(0) @map("sort_order")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  prices PackagePrice[]
+  orders Order[]
+  occasions PackageOccasion[]
+
+  @@map("packages")
+}
+
+model PackageOccasion {
+  packageId  String @map("package_id")
+  occasionId String @map("occasion_id")
+
+  package  Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  occasion Occasion @relation(fields: [occasionId], references: [id], onDelete: Cascade)
+
+  @@id([packageId, occasionId])
+  @@map("package_occasions")
+}
+
+model PackagePrice {
+  id            String  @id @default(uuid())
+  packageId     String  @map("package_id")
+  currency      String
+  amount        Int
+  stripePriceId String? @map("stripe_price_id")
+
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, currency])
+  @@map("package_prices")
+}
+
+model VoiceTalent {
+  id             String    @id @default(uuid())
+  slug           String    @unique
+  displayName    String    @map("display_name")
+  headline       String?
+  bio            String?
+  portraitUrl    String?   @map("portrait_url")
+  accent         String?
+  languages      String[]  @default([])
+  vibeTags       String[]  @default([])
+  voiceGender    String?   @map("voice_gender")
+  callsDelivered Int       @default(0) @map("calls_delivered")
+  rating         Decimal?  @db.Decimal(3, 2)
+  isActive       Boolean   @default(true) @map("is_active")
+  userId         String?   @unique @map("user_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  samples VoiceSample[]
+  orders  Order[]
+
+  @@map("voice_talents")
+}
+
+model VoiceSample {
+  id         String    @id @default(uuid())
+  talentId   String    @map("talent_id")
+  title      String
+  occasionId String?   @map("occasion_id")
+  tone       ToneLevel @default(warm)
+  audioUrl   String    @map("audio_url")
+  durationMs Int       @map("duration_ms")
+  peaks      Json
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  talent   VoiceTalent @relation(fields: [talentId], references: [id], onDelete: Cascade)
+  occasion Occasion?   @relation(fields: [occasionId], references: [id], onDelete: SetNull)
+
+  @@index([talentId])
+  @@map("voice_samples")
+}
+
+// ============================================================
+// Orders
+// ============================================================
+
+model Recipient {
+  id           String   @id @default(uuid())
+  firstName    String   @map("first_name")
+  relationship String?
+  phoneE164    String   @unique @map("phone_e164")
+  phoneCountry String   @map("phone_country")
+  timezone     String
+  city         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@map("recipients")
+}
+
+model Order {
+  id                 String       @id @default(uuid())
+  publicToken        String       @unique @map("public_token")
+  buyerName          String       @map("buyer_name")
+  buyerEmail         String       @map("buyer_email")
+  buyerWhatsapp      String?      @map("buyer_whatsapp")
+  whatsappOptIn      Boolean      @default(false) @map("whatsapp_opt_in")
+  recipientId        String       @map("recipient_id")
+  occasionId         String       @map("occasion_id")
+  packageId          String       @map("package_id")
+  talentId           String?      @map("talent_id")
+  status             OrderStatus  @default(draft)
+  currency           String
+  subtotal           Int
+  addonsTotal        Int          @default(0) @map("addons_total")
+  total              Int
+  scheduledStart     DateTime     @map("scheduled_start")
+  windowMinutes      Int          @default(15) @map("window_minutes")
+  backupStart        DateTime?    @map("backup_start")
+  recordingConsent   Boolean      @default(false) @map("recording_consent")
+  buyerAttestation   Boolean      @default(false) @map("buyer_attestation")
+  paymentProvider    String?      @map("payment_provider")
+  paymentIntentId    String?      @unique @map("payment_intent_id")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  recipient     Recipient      @relation(fields: [recipientId], references: [id])
+  occasion      Occasion       @relation(fields: [occasionId], references: [id])
+  package       Package        @relation(fields: [packageId], references: [id])
+  talent        VoiceTalent?   @relation(fields: [talentId], references: [id])
+  brief         CallBrief?
+  attempts      CallAttempt[]
+  keepsake      Keepsake?
+  consentRecords ConsentRecord[]
+
+  @@index([status, scheduledStart])
+  @@index([buyerEmail])
+  @@map("orders")
+}
+
+model CallBrief {
+  orderId     String    @id @map("order_id")
+  tone        ToneLevel @default(warm)
+  keyMessage  String    @map("key_message")
+  context     String?
+  insideJokes String?   @map("inside_jokes")
+  avoid       String?
+  language    String    @default("en")
+  reviewedBy  String?   @map("reviewed_by")
+  reviewedAt  DateTime? @map("reviewed_at")
+
+  order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("BriefReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@map("call_briefs")
+}
+
+model CallAttempt {
+  id            String      @id @default(uuid())
+  orderId       String      @map("order_id")
+  attemptNumber Int         @default(1) @map("attempt_number")
+  startedAt     DateTime?   @map("started_at")
+  endedAt       DateTime?   @map("ended_at")
+  durationSec   Int?        @map("duration_sec")
+  outcome       CallOutcome?
+  recordingUrl  String?     @map("recording_url")
+  errorDetail   String?     @map("error_detail")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("call_attempts")
+}
+
+model Keepsake {
+  id         String             @id @default(uuid())
+  orderId    String             @unique @map("order_id")
+  slug       String             @unique
+  audioUrl   String             @map("audio_url")
+  durationMs Int                @map("duration_ms")
+  peaks      Json
+  visibility KeepsakeVisibility @default(link)
+  viewCount  Int                @default(0) @map("view_count")
+  isFeatured Boolean            @default(false) @map("is_featured")
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("keepsakes")
+}
+
+// ============================================================
+// Trust, safety, consent, webhooks, drafts
+// ============================================================
+
+model DoNotCall {
+  id        String    @id @default(uuid())
+  phoneE164 String    @unique @map("phone_e164")
+  reason    String?
+  source    DncSource @default(recipient_request)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("do_not_call")
+}
+
+model ConsentRecord {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  kind      String
+  value     Boolean
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("consent_records")
+}
+
+model AbuseReport {
+  id           String      @id @default(uuid())
+  phoneE164   String?     @map("phone_e164")
+  email       String?
+  reason      String
+  detail      String?
+  status      AbuseStatus @default(open)
+  assignedTo  String?     @map("assigned_to")
+  resolvedAt  DateTime?   @map("resolved_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  assignee User? @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("abuse_reports")
+}
+
+model WebhookEvent {
+  id         String   @id
+  provider   String
+  eventType  String   @map("event_type")
+  payload    Json
+  processed  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, id])
+  @@map("webhook_events")
+}
+
+model DraftOrder {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  email     String?
+  state     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@map("draft_orders")
+}

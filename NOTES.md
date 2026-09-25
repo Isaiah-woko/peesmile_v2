@@ -23,3 +23,9 @@ Decisions are recorded as they are made. The most recent decision wins where doc
 - Fonts are self hosted with next/font/local. The woff2 files must exist in app/fonts before the app will build.
 
 - Gambetta italic was omitted because the RegularItalic cut was not available at download time. Display text set to italic will synthesize an oblique from the regular cut. Revisit when building the Keepsake page, and substitute the true italic from the Fontshare variable package if it is found.
+
+- Added Order.whatsappOptIn to the schema so the single checkout checkbox is persisted. Required by the WhatsApp first decision.
+- Added a PackageOccasion join table so package availability can vary per occasion later without a migration.
+- markBriefReviewed updates the status inside the same transaction as the review stamp. This is the one place that bypasses transitionOrder, and it does so because the two writes must be atomic. Revisit if stricter auditing is needed.
+- Public token generation uses two concatenated UUID fragments for a 42 character token. Longer than the 22 character minimum in the spec.
+- Voice sample audio URLs point at /audio/samples placeholders. Real files must be uploaded to public/audio/samples or to R2 before Phase 2 marketing pages use them.
