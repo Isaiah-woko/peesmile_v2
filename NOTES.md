@@ -29,3 +29,10 @@ Decisions are recorded as they are made. The most recent decision wins where doc
 - markBriefReviewed updates the status inside the same transaction as the review stamp. This is the one place that bypasses transitionOrder, and it does so because the two writes must be atomic. Revisit if stricter auditing is needed.
 - Public token generation uses two concatenated UUID fragments for a 42 character token. Longer than the 22 character minimum in the spec.
 - Voice sample audio URLs point at /audio/samples placeholders. Real files must be uploaded to public/audio/samples or to R2 before Phase 2 marketing pages use them.
+
+- Auth uses the JWT session strategy so the middleware can read sessions on the Edge runtime without loading Prisma.
+- Auth config is split. auth.config.ts is Edge safe and holds pages, session strategy, and trustHost. auth.ts adds the Prisma adapter and the Resend provider.
+- Magic links are only sent to emails that already exist in the users table. This restricts sign-in to the seeded owner and prevents strangers from creating accounts. Unknown emails receive nothing, which also blocks email enumeration.
+- R2 storage initializes the S3 client lazily. No environment variable is read at import time, so a missing key cannot crash the app on boot.
+- Session augmentation with user id and role is deferred to Phase 5, when the admin dashboard needs it for audit fields such as call_briefs.reviewedBy.
+- Login and verify-request pages live in the app/admin/(auth) route group so they do not inherit the dashboard chrome from app/admin/(dashboard)/layout.tsx.
