@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/react";
 import { gambetta, switzer, jetbrainsMono } from "./fonts";
+import { AudioProvider } from "@/components/audio/AudioProvider";
+import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -22,7 +25,12 @@ export default function RootLayout({
       lang="en"
       className={`${gambetta.variable} ${switzer.variable} ${jetbrainsMono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <PostHogProvider>
+          <AudioProvider>{children}</AudioProvider>
+        </PostHogProvider>
+        <Analytics />
+      </body>
     </html>
   );
 }

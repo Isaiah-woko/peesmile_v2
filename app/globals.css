@@ -180,3 +180,22 @@
     0 -1px 0 rgba(0, 0, 0, 0.45),
     0 1px 0 rgba(247, 243, 236, 0.12);
 }
+
+/* Drawer and overlay entry motion. */
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
