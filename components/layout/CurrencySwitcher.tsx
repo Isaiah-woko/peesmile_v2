@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import {
 const codes = Object.keys(CURRENCIES) as CurrencyCode[];
 
 export function CurrencySwitcher() {
+  const router = useRouter();
   const [value, setValue] = useState<CurrencyCode>("USD");
 
   useEffect(() => {
@@ -29,6 +31,7 @@ export function CurrencySwitcher() {
     const code = next as CurrencyCode;
     setValue(code);
     setCurrencyCookie(code);
+    router.refresh();
   };
 
   return (
