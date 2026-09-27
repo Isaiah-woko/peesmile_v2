@@ -44,3 +44,13 @@ Decisions are recorded as they are made. The most recent decision wins where doc
 - The country picker is a curated list of 23 countries covering the core markets. A full searchable country picker is a future enhancement.
 - The brief language options are fixed to English and Nigerian Pidgin, matching the single caller's languages. Expand when more languages are supported.
 - Navigation now lives in the wizard, not the steps. Steps receive canContinue, onContinue, and onBack as props, which keeps gating and analytics in one place.
+
+- The Moment step converts the buyer's chosen recipient-local time to a UTC instant via zonedTimeToUtc, with a two-pass offset check for DST edges.
+- Quiet hours (22:00 to 08:00 recipient time) are shaded on the DayRibbon but not blocked.
+- The Moment step ships with sensible defaults (tomorrow at 2pm, 15 minute window), so it validates immediately and the buyer adjusts from there.
+- /checkout is a placeholder until Phase 4.
+
+- Server-side draft persistence is live. The wizard saves to /api/drafts with a 1 second debounce on change and again on every continue, and restores from a ?draft= token. The token lives in localStorage under peesmile_draft_token.
+- Saves are gated until any pending restore settles, and empty drafts are never written.
+- Rate limiting on /api/drafts is deferred to Phase 5 with the Upstash setup. Required before production.
+- The draft_orders.email column stays null until checkout collects the buyer's email in Phase 4.

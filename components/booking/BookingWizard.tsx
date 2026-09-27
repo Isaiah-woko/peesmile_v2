@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Occasion, Package, PackagePrice } from "@prisma/client";
 import { track } from "@/lib/analytics";
 import { formatAmount, type CurrencyCode } from "@/lib/currency";
@@ -10,14 +11,35 @@ import {
   recipientSchema,
 } from "@/lib/validation/schemas";
 import type { TalentWithSamples } from "@/lib/services/talents";
-import { BookingProvider, TOTAL_STEPS, useBooking } from "./BookingProvider";
+import {
+  BookingProvider,
+  TOTAL_STEPS,
+  useBooking,
+  type BookingDraft,
+} from "./BookingProvider";
 import { CallSheet } from "./CallSheet";
 import { OccasionStep } from "@/app/book/_steps/Occasion";
 import { RecipientStep } from "@/app/book/_steps/Recipient";
 import { CallerStep } from "@/app/book/_steps/Caller";
 import { BriefStep } from "@/app/book/_steps/Brief";
+import { MomentStep } from "@/app/book/_steps/Moment";
+import { ReviewStep } from "@/app/book/_steps/Review";
 
 type PackageWithPrices = Package & { prices: PackagePrice[] };
+
+const DRAFT_TOKEN_KEY = "peesmile_draft_token";
+const SAVE_DEBOUNCE_MS = 1000;
+
+function hasMeaningfulContent(draft: BookingDraft): boolean {
+  return Boolean(
+    draft.occasionSlug ||
+      draft.recipient.firstName ||
+      draft.recipient.phoneE164 ||
+      draft.brief.keyMessage ||
+      draft.moment ||
+      draft.packageSlug
+  );
+}
 
 export interface BookingWizardProps {
   occasions: Occasion[];
@@ -27,8 +49,17 @@ export interface BookingWizardProps {
 }
 
 function WizardShell({ occasions, packages, currency, talent }: BookingWizardProps) {
-  const { step, setStep, draft, hydrated, goNext, goBack } = useBooking();
+  const router = useRouter();
+  const { step, setStep, draft, hydrated, goNext, goBack, restoreDraft } = useBooking();
 
+  const [restoreSettled, setRestoreSettled] = useState(false);
+  const draftRef = useRef(draft);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  // One-time URL recovery: preselect occasion and restore step.
   useEffect(() => {
     if (!hydrated) return;
     const params = new URLSearchParams(window.location.search);
@@ -47,6 +78,94 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
     // Recovery runs once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
+
+  // Restore a server-side draft when a token is present in the URL.
+  useEffect(() => {
+    if (!hydrated) return;
+    const params = new URLSearchParams(window.location.search);
+    const draftToken = params.get("draft");
+
+    if (!draftToken) {
+      setRestoreSettled(true);
+      return;
+    }
+
+    const encodedDraftToken = encodeURIComponent(draftToken);
+
+    // Pin the token immediately so later saves target the same draft.
+    try {
+      window.localStorage.setItem(DRAFT_TOKEN_KEY, draftToken);
+    } catch {
+      // Ignore.
+    }
+
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/drafts?token=${encodedDraftToken}`);
+        if (!res.ok) {
+          if (!cancelled) setRestoreSettled(true);
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          if (data.state) {
+            restoreDraft(data.state);
+          }
+          setRestoreSettled(true);
+        }
+      } catch {
+        if (!cancelled) setRestoreSettled(true);
+      }
+    }
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, restoreDraft]);
+
+  const saveDraftToServer = useCallback(async () => {
+    const currentDraft = draftRef.current;
+    if (!hasMeaningfulContent(currentDraft)) return;
+
+    try {
+      let token: string | null = null;
+      try {
+        token = window.localStorage.getItem(DRAFT_TOKEN_KEY);
+      } catch {
+        // Ignore.
+      }
+
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, state: currentDraft }),
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.token) {
+        try {
+          window.localStorage.setItem(DRAFT_TOKEN_KEY, data.token);
+        } catch {
+          // Ignore.
+        }
+      }
+    } catch {
+      // Non-fatal. The localStorage draft still works.
+    }
+  }, []);
+
+  // Debounced server save as the draft changes, once any restore has settled.
+  useEffect(() => {
+    if (!hydrated || !restoreSettled) return;
+    if (!hasMeaningfulContent(draft)) return;
+    const timeoutId = setTimeout(() => {
+      void saveDraftToServer();
+    }, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timeoutId);
+  }, [draft, hydrated, restoreSettled, saveDraftToServer]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -72,11 +191,19 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
     }
   }, [step, draft]);
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
     if (!canContinue) return;
     track("wizard_step_complete", { step: step + 1 });
+
+    if (step === TOTAL_STEPS - 1) {
+      await saveDraftToServer();
+      router.push("/checkout");
+      return;
+    }
+
+    void saveDraftToServer();
     goNext();
-  }, [canContinue, step, goNext]);
+  }, [canContinue, step, goNext, router, saveDraftToServer]);
 
   const selectedPackage = packages.find((item) => item.slug === draft.packageSlug);
   const selectedPrice = selectedPackage
@@ -110,20 +237,21 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
           <BriefStep canContinue={canContinue} onContinue={handleContinue} onBack={goBack} />
         ) : null}
         {step === 4 ? (
-          <div className="rounded-md border border-rule bg-paper p-6 text-body-0 text-ink-soft">
-            Moment step lands in Part 4.
-          </div>
+          <MomentStep canContinue={canContinue} onContinue={handleContinue} onBack={goBack} />
         ) : null}
         {step === 5 ? (
-          <div className="rounded-md border border-rule bg-paper p-6 text-body-0 text-ink-soft">
-            Review step lands in Part 4.
-          </div>
+          <ReviewStep
+            packages={packages}
+            currency={currency}
+            canContinue={canContinue}
+            onContinue={handleContinue}
+            onBack={goBack}
+          />
         ) : null}
       </div>
 
       <CallSheet occasions={occasions} packages={packages} currency={currency} />
 
-      {/* Mobile sticky navigation bar */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-rule bg-paper shadow-2 lg:hidden">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-6 py-3">
           <div className="flex items-center gap-4">
@@ -153,7 +281,7 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
             disabled={!canContinue}
             className="rounded-md bg-ember px-5 py-2.5 text-body-0 font-medium text-paper transition-colors duration-120ms hover:bg-ember-deep disabled:pointer-events-none disabled:opacity-50"
           >
-            {step === TOTAL_STEPS - 1 ? "Review the call" : "Continue"}
+            {step === TOTAL_STEPS - 1 ? "Continue to checkout" : "Continue"}
           </button>
         </div>
       </div>

@@ -51,6 +51,7 @@ interface BookingContextValue {
   setPackage: (slug: string | null) => void;
   setConsent: (consent: Consent) => void;
   resetDraft: () => void;
+  restoreDraft: (state: Partial<BookingDraft>) => void;
 }
 
 const BookingContext = createContext<BookingContextValue | null>(null);
@@ -138,6 +139,16 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const restoreDraft = useCallback((state: Partial<BookingDraft>) => {
+    setDraft({
+      ...EMPTY_DRAFT,
+      ...state,
+      recipient: { ...EMPTY_DRAFT.recipient, ...state.recipient },
+      brief: { ...EMPTY_DRAFT.brief, ...state.brief },
+      consent: { ...EMPTY_DRAFT.consent, ...state.consent },
+    });
+  }, []);
+
   const value = useMemo<BookingContextValue>(
     () => ({
       step,
@@ -154,6 +165,7 @@ export function BookingProvider({ children }: { children: ReactNode }) {
       setPackage,
       setConsent,
       resetDraft,
+      restoreDraft,
     }),
     [
       step,
@@ -168,6 +180,7 @@ export function BookingProvider({ children }: { children: ReactNode }) {
       setPackage,
       setConsent,
       resetDraft,
+      restoreDraft,
     ]
   );
 
