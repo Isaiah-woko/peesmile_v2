@@ -36,3 +36,11 @@ Decisions are recorded as they are made. The most recent decision wins where doc
 - R2 storage initializes the S3 client lazily. No environment variable is read at import time, so a missing key cannot crash the app on boot.
 - Session augmentation with user id and role is deferred to Phase 5, when the admin dashboard needs it for audit fields such as call_briefs.reviewedBy.
 - Login and verify-request pages live in the app/admin/(auth) route group so they do not inherit the dashboard chrome from app/admin/(dashboard)/layout.tsx.
+- Booking add-ons appear in the spec (Review step and orders.addonsTotal) but no addon catalog exists in the schema. Pricing computes addonsTotal as 0 for now. Flagging this as a gap to resolve before Phase 4.
+
+- The wizard_abandon event is deferred to Part 4. It needs the server-side draft row so abandon can be recorded against a real draft id.
+- The mobile sticky bar duplicates the StepShell continue control on small screens. StepShell's own bar should be hidden under lg in Part 3 once the remaining steps land.
+
+- The country picker is a curated list of 23 countries covering the core markets. A full searchable country picker is a future enhancement.
+- The brief language options are fixed to English and Nigerian Pidgin, matching the single caller's languages. Expand when more languages are supported.
+- Navigation now lives in the wizard, not the steps. Steps receive canContinue, onContinue, and onBack as props, which keeps gating and analytics in one place.
