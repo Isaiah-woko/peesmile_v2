@@ -125,37 +125,39 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
     };
   }, [hydrated, restoreDraft]);
 
-  const saveDraftToServer = useCallback(async () => {
-    const currentDraft = draftRef.current;
-    if (!hasMeaningfulContent(currentDraft)) return;
+ const saveDraftToServer = useCallback(async (): Promise<string | null> => {
+  const currentDraft = draftRef.current;
+  if (!hasMeaningfulContent(currentDraft)) return null;
 
+  try {
+    let token: string | null = null;
     try {
-      let token: string | null = null;
+      token = window.localStorage.getItem(DRAFT_TOKEN_KEY);
+    } catch {
+      // Ignore.
+    }
+
+    const res = await fetch("/api/drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, state: currentDraft }),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data.token) {
       try {
-        token = window.localStorage.getItem(DRAFT_TOKEN_KEY);
+        window.localStorage.setItem(DRAFT_TOKEN_KEY, data.token);
       } catch {
         // Ignore.
       }
-
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, state: currentDraft }),
-      });
-      if (!res.ok) return;
-
-      const data = await res.json();
-      if (data.token) {
-        try {
-          window.localStorage.setItem(DRAFT_TOKEN_KEY, data.token);
-        } catch {
-          // Ignore.
-        }
-      }
-    } catch {
-      // Non-fatal. The localStorage draft still works.
+      return data.token as string;
     }
-  }, []);
+    return null;
+  } catch {
+    return null;
+  }
+}, []);
 
   // Debounced server save as the draft changes, once any restore has settled.
   useEffect(() => {
@@ -192,18 +194,29 @@ function WizardShell({ occasions, packages, currency, talent }: BookingWizardPro
   }, [step, draft]);
 
   const handleContinue = useCallback(async () => {
-    if (!canContinue) return;
-    track("wizard_step_complete", { step: step + 1 });
+  if (!canContinue) return;
+  track("wizard_step_complete", { step: step + 1 });
 
-    if (step === TOTAL_STEPS - 1) {
-      await saveDraftToServer();
-      router.push("/checkout");
-      return;
+  if (step === TOTAL_STEPS - 1) {
+    const token = await saveDraftToServer();
+    if (token) {
+      router.push(`/checkout?draft=${token}`);
+    } else {
+      // Fallback: try whatever token is already stored.
+      let stored: string | null = null;
+      try {
+        stored = window.localStorage.getItem(DRAFT_TOKEN_KEY);
+      } catch {
+        // Ignore.
+      }
+      router.push(stored ? `/checkout?draft=${stored}` : "/book");
     }
+    return;
+  }
 
-    void saveDraftToServer();
-    goNext();
-  }, [canContinue, step, goNext, router, saveDraftToServer]);
+  void saveDraftToServer();
+  goNext();
+}, [canContinue, step, goNext, router, saveDraftToServer]);
 
   const selectedPackage = packages.find((item) => item.slug === draft.packageSlug);
   const selectedPrice = selectedPackage

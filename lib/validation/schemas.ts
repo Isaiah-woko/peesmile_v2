@@ -56,3 +56,12 @@ export const bookingSchema = z.object({
   consent: consentSchema,
 });
 export type Booking = z.infer<typeof bookingSchema>;
+
+// Add to the existing schemas file
+export const buyerSchema = z.object({
+  buyerName: z.string().trim().min(2, "Enter your name.").max(100),
+  buyerEmail: z.string().email("Enter a valid email address.").max(255),
+  buyerWhatsapp: z.string().trim().min(5, "Enter a valid WhatsApp number.").max(20).optional(),
+  whatsappOptIn: z.boolean().default(false),
+});
+export type BuyerContact = z.infer<typeof buyerSchema>;

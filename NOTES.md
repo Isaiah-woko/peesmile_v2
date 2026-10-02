@@ -54,3 +54,23 @@ Decisions are recorded as they are made. The most recent decision wins where doc
 - Saves are gated until any pending restore settles, and empty drafts are never written.
 - Rate limiting on /api/drafts is deferred to Phase 5 with the Upstash setup. Required before production.
 - The draft_orders.email column stays null until checkout collects the buyer's email in Phase 4.
+
+## Bachs.io integration status
+Verified against Bachs documentation:
+- Base URLs: https://api.bachs.io/v1 live, https://sandbox-api.bachs.io/v1 sandbox.
+- Checkout endpoint is POST /v1/checkout-sessions. Refunds are POST /v1/refunds via charge_id.
+- Amounts are positive decimal strings such as "32500.00", never minor units. lib/payments/money.ts handles the conversion to and from our internal integer minor units using integer math only.
+- Webhook signature is HMAC-SHA256 of "{timestamp}.{raw_body}" with headers X-Bachs-Timestamp and X-Bachs-Signature, plus a 300 second replay window.
+- Event types are collection.succeeded, collection.failed, collection.underpaid, checkout.expired, refund.created, refund.paid, refund.failed.
+- Checkout response uses id and url. Webhook data carries charge_id, status, amount, currency, and metadata at data.metadata.
+- Success redirect appends checkout_id only.
+- Idempotency-Key header is the dedup mechanism.
+
+Confirm with a sandbox smoke test before go-live:
+- The exact request field names success_url and cancel_url on checkout creation.
+- That metadata sent at checkout creation arrives intact at data.metadata in the webhook.
+
+## Payments decisions
+- collection.underpaid and checkout.expired are recorded in webhook_events but treated as non-confirming. Only collection.succeeded moves an order to paid.
+- confirmPayment is idempotent. Duplicate or late webhooks for an order already past payment are recorded but not re-applied.
+- The webhook route marks an event processed only after the work succeeds, so retries are safe and never double-charge.
